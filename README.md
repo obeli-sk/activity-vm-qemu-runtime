@@ -32,9 +32,12 @@ future work, even though QEMU TCG can emulate x86_64 on those hosts.
 
 The GitHub Actions workflow builds and smoke tests the TCG bundle on every PR
 and push. It uploads a compressed bundle plus the pinned TryNix QEMU source
-reference. Version tags, or a manual workflow run with `push`, also publish it
-to `docker.io/getobelisk/activity-vm-qemu-runtime` using ORAS. Docker Hub
-publishing requires `DOCKER_HUB_USERNAME` and `DOCKER_HUB_TOKEN` secrets.
+reference. After the Obelisk native QEMU backend is merged, run the `runtime`
+workflow on `main` with a new `v*` tag to publish the bundle to
+`docker.io/getobelisk/activity-vm-qemu-runtime` using ORAS. The workflow opens
+an Obelisk PR containing the digest-pinned OCI reference with no trailing
+newline, then creates the release tag in this repository. Publication requires
+`DOCKER_HUB_USERNAME`, `DOCKER_HUB_TOKEN`, and `RUNTIME_TO_OBELISK_PR` secrets.
 
 The OCI artifact carries the guest and snapshot. Installation requires Nix to
 fetch the matching QEMU from the pinned TryNix source. The installer checks its

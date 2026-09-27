@@ -5,22 +5,15 @@ on:
   push:
     branches:
       - main
-    tags:
-      - v*
   workflow_dispatch:
     inputs:
       tag:
-        description: Docker Hub tag, defaults to the commit SHA
-        required: false
+        description: Release tag (for example, v1.0.0)
+        required: true
         type: string
-      push:
-        description: Push the runtime to Docker Hub
-        default: false
-        required: false
-        type: boolean
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   IMAGE_BASE: docker.io/getobelisk/activity-vm-qemu-runtime
@@ -32,6 +25,21 @@ jobs:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@v21
       - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Validate release tag
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'Run releases from main' >&2; exit 1; }
+          [[ "$TAG" == v* ]] && git check-ref-format "refs/tags/$TAG"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            echo "Tag $TAG already exists" >&2
+            exit 1
+          else
+            status=$?
+            [[ "$status" -eq 2 ]] || exit "$status"
+          fi
 
       - name: Build runtime
         run: nix build --print-build-logs
@@ -50,26 +58,57 @@ jobs:
           retention-days: 7
 
       - uses: oras-project/setup-oras@v1
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.push) || startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Push runtime to Docker Hub
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.push) || startsWith(github.ref, 'refs/tags/v') }}
+        id: push
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
-          INPUT_TAG: ${{ inputs.tag }}
+          TAG: ${{ inputs.tag }}
         run: |
-          tag="$INPUT_TAG"
-          if [[ -z "$tag" ]]; then
-            tag="${GITHUB_REF_NAME:-$GITHUB_SHA}"
-          fi
           echo "$DOCKER_HUB_TOKEN" | oras login docker.io -u "$DOCKER_HUB_USERNAME" --password-stdin
           cd builds
           printf '%s\n' '{"architecture":"amd64","os":"linux"}' > oci-config.json
-          oras push "${IMAGE_BASE}:${tag}" \
+          oras push "${IMAGE_BASE}:${TAG}" \
             --config oci-config.json:application/vnd.oci.image.config.v1+json \
             --annotation dev.obelisk.artifact.kind=activity-vm-qemu-tcg.v1 \
             activity-vm-qemu-tcg.tar.zst:application/vnd.obelisk.activity-vm-qemu-tcg.v1+zstd \
             qemu-source.txt:text/plain \
             SHA256SUMS:text/plain
-          oras manifest fetch --descriptor "${IMAGE_BASE}:${tag}"
+          descriptor=$(oras manifest fetch --descriptor "${IMAGE_BASE}:${TAG}")
+          echo "$descriptor"
+          manifest_digest=$(printf '%s' "$descriptor" | jq -r .digest)
+          echo "reference=oci://${IMAGE_BASE}:${TAG}@${manifest_digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Open obelisk version-bump PR
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ secrets.RUNTIME_TO_OBELISK_PR }}
+          REFERENCE: ${{ steps.push.outputs.reference }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/obeli-sk/obelisk.git" obelisk-clone
+          cd obelisk-clone
+          branch="bump/activity-vm-qemu-runtime-${TAG}"
+          git switch -c "$branch"
+          printf '%s' "$REFERENCE" > crates/embedded-assets/activity-vm-qemu-runtime-version.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add crates/embedded-assets/activity-vm-qemu-runtime-version.txt
+          git commit -m "chore: bump activity-vm-qemu-runtime to ${TAG}"
+          git push origin "$branch"
+          # shellcheck disable=SC2016
+          body=$(printf 'Automated bump of the native QEMU activity VM runtime OCI reference to `%s`.\n\nReference: `%s`\n' "$TAG" "$REFERENCE")
+          gh pr create --repo obeli-sk/obelisk --base main --head "$branch" \
+            --title "chore: bump activity-vm-qemu-runtime to ${TAG}" \
+            --body "$body"
+
+      - name: Create release tag
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" tag -a "$TAG" -m "Release $TAG"
+          git push origin "refs/tags/$TAG"
