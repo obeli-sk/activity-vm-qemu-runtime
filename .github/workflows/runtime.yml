@@ -1,0 +1,75 @@
+name: runtime
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Docker Hub tag, defaults to the commit SHA
+        required: false
+        type: string
+      push:
+        description: Push the runtime to Docker Hub
+        default: false
+        required: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_BASE: docker.io/getobelisk/activity-vm-qemu-runtime
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@v21
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Build runtime
+        run: nix build --print-build-logs
+
+      - name: Restore and run guest command
+        run: nix develop -c python3 scripts/smoke-test.py result
+
+      - name: Stage runtime
+        run: nix develop -c bash scripts/stage-release.sh result flake.lock builds
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: activity-vm-qemu-tcg-${{ github.sha }}
+          path: builds/
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: oras-project/setup-oras@v1
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.push) || startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Push runtime to Docker Hub
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.push) || startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="$INPUT_TAG"
+          if [[ -z "$tag" ]]; then
+            tag="${GITHUB_REF_NAME:-$GITHUB_SHA}"
+          fi
+          echo "$DOCKER_HUB_TOKEN" | oras login docker.io -u "$DOCKER_HUB_USERNAME" --password-stdin
+          cd builds
+          printf '%s\n' '{"architecture":"amd64","os":"linux"}' > oci-config.json
+          oras push "${IMAGE_BASE}:${tag}" \
+            --config oci-config.json:application/vnd.oci.image.config.v1+json \
+            --annotation dev.obelisk.artifact.kind=activity-vm-qemu-tcg.v1 \
+            activity-vm-qemu-tcg.tar.zst:application/vnd.obelisk.activity-vm-qemu-tcg.v1+zstd \
+            qemu-source.txt:text/plain \
+            SHA256SUMS:text/plain
+          oras manifest fetch --descriptor "${IMAGE_BASE}:${tag}"
