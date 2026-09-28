@@ -30,9 +30,12 @@ chmod 755 "$root/init"
 bsdtar -xOf "$bios_dir/initramfs.cpio.gz" bin/reseed > "$root/bin/reseed"
 chmod 755 "$root/bin/reseed"
 mkdir -p "$root/share"
+# Processes without CAP_DAC_OVERRIDE (e.g. Chromium's children) must traverse / and write /tmp.
+chmod 755 "$root"
+chmod 1777 "$root/tmp"
 (
   cd "$root"
-  bsdtar --format=newc -cf - . | gzip -1 > "$output/guest/initramfs.cpio.gz"
+  bsdtar --format=newc --uid 0 --gid 0 -cf - . | gzip -1 > "$output/guest/initramfs.cpio.gz"
 )
 cp -f "$kernel" "$output/guest/bzImage"
 cp -f "$bios_dir"/*.bin "$output/guest/"

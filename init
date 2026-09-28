@@ -8,6 +8,8 @@ mount -t devtmpfs devtmpfs /dev
 mkdir -p /share /obelisk-activity-vm-http /obelisk-activity /tmp
 ip link set lo up
 nft -f /usr/share/obelisk/activity-vm.nft
+# The default heuristic rejects single commits near guest RAM size, such as V8's 512 MiB code range.
+echo 1 > /proc/sys/vm/overcommit_memory
 echo 'obelisk-native-qemu: ready for snapshot'
 
 IFS= read -r _ < /dev/console
