@@ -27,7 +27,7 @@ export OBELISK_UNSTABLE_ACTIVITY_VM=qemu-tcg
 export OBELISK_NATIVE_QEMU_BUNDLE=$(readlink -f result)
 ```
 
-The snapshot has 512 MiB of RAM and an empty 16 GiB `virtio-mem` device, described
+The snapshot has 256 MiB of RAM and an empty 16 GiB `virtio-mem` device, described
 by `hotplug` in `guest/machine.json`. Obelisk plugs an activity's extra RAM over
 QMP after restoring the snapshot and before sending the wall clock, and `init`
 then resizes the root filesystem to 90% of the enlarged RAM. The kernel is the
