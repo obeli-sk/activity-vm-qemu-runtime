@@ -5,6 +5,7 @@
     "-nographic",
     "-cpu", "Haswell-v4,+rdrand",
     "-device", "virtio-rng-pci",
+    "-smp", "4",
     "-m", "{ram},maxmem=17G",
     "-object", "memory-backend-ram,id=vmem0,size=16G,reserve=off",
     "-device", "virtio-mem-pci,id=vmem,memdev=vmem0,requested-size=0,block-size=2M",

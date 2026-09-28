@@ -27,11 +27,11 @@ export OBELISK_UNSTABLE_ACTIVITY_VM=qemu-tcg
 export OBELISK_NATIVE_QEMU_BUNDLE=$(readlink -f result)
 ```
 
-The snapshot has 256 MiB of RAM and an empty 16 GiB `virtio-mem` device, described
+The snapshot has 4 vCPUs, 256 MiB of RAM, and an empty 16 GiB `virtio-mem` device, described
 by `hotplug` in `guest/machine.json`. Obelisk plugs an activity's extra RAM over
 QMP after restoring the snapshot and before sending the wall clock, and `init`
 then resizes the root filesystem to 90% of the enlarged RAM. The kernel is the
-Bochs runtime's kernel with memory hotplug and `virtio-mem` enabled. The guest
+Bochs runtime's kernel with SMP, memory hotplug, and `virtio-mem` enabled. The guest
 boots with `rcupdate.rcu_expedited=1`; without it, the first plug after restore
 waits about 0.5 s on KVM for an RCU grace period.
 
