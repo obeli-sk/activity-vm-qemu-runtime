@@ -13,8 +13,9 @@ nix build
 nix develop -c python3 scripts/smoke-test.py result
 ```
 
-The smoke test restores the snapshot, mounts the 9p mailbox, runs `/bin/echo`
-in the guest, and checks its output. The Nix output contains `guest/`,
+The smoke test restores the snapshot, plugs 1 GiB of guest RAM, mounts the 9p
+mailbox, runs `/bin/echo` in the guest, and checks its output, the guest's RAM,
+and the size of its root filesystem. The Nix output contains `guest/`,
 `vm.state`, `qemu-path`, and `qemu-version.txt`. The path names the exact QEMU
 build used to create the snapshot. Obelisk cannot safely restore it with a
 different QEMU build.
@@ -25,6 +26,14 @@ To use this output with the native backend in Obelisk:
 export OBELISK_UNSTABLE_ACTIVITY_VM=qemu-tcg
 export OBELISK_NATIVE_QEMU_BUNDLE=$(readlink -f result)
 ```
+
+The snapshot has 512 MiB of RAM and an empty 16 GiB `virtio-mem` device, described
+by `hotplug` in `guest/machine.json`. Obelisk plugs an activity's extra RAM over
+QMP after restoring the snapshot and before sending the wall clock, and `init`
+then resizes the root filesystem to 90% of the enlarged RAM. The kernel is the
+Bochs runtime's kernel with memory hotplug and `virtio-mem` enabled. The guest
+boots with `rcupdate.rcu_expedited=1`; without it, the first plug after restore
+waits about 0.5 s on KVM for an RCU grace period.
 
 The backend currently supports Linux x86_64. macOS and Linux ARM builds are
 future work, even though QEMU TCG can emulate x86_64 on those hosts.

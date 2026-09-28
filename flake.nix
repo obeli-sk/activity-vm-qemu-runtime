@@ -13,6 +13,18 @@
       pkgs = nixpkgs.legacyPackages.${system};
       trynixPackages = trynix.packages.${system};
       bochsPackages = bochs-runtime.packages.${system};
+      # virtio-mem lets Obelisk plug guest RAM after restore, so one snapshot serves every size.
+      # VIRTIO_MEM depends on EXCLUSIVE_SYSTEM_RAM, which needs STRICT_DEVMEM.
+      kernel = bochsPackages.linux.overrideAttrs (old: {
+        postPatch = old.postPatch + ''
+          scripts/config --file .config \
+            -e MEMORY_HOTPLUG -e MEMORY_HOTPLUG_DEFAULT_ONLINE -e MEMORY_HOTREMOVE \
+            -e MHP_MEMMAP_ON_MEMORY -e STRICT_DEVMEM -e VIRTIO_MEM
+        '';
+        postBuild = ''
+          grep -qx CONFIG_VIRTIO_MEM=y .config
+        '';
+      });
       settime = pkgs.pkgsStatic.runCommandCC "settime" { } ''
         mkdir -p $out/bin
         $CC -O2 -Wall -Werror -o $out/bin/settime ${./settime.c}
@@ -23,7 +35,7 @@
       } ''
         bash "$src/build-bundle.sh" \
           ${pkgs.qemu}/bin/qemu-system-x86_64 \
-          ${bochsPackages.linux}/bzImage \
+          ${kernel}/bzImage \
           ${bochsPackages.rootfs}/rootfs.bin \
           ${trynixPackages.site}/guest \
           ${settime}/bin/settime \
@@ -36,7 +48,7 @@
         qemu-tcg = pkgs.qemu;
         qemu-kvm = pkgs.qemu;
         site = trynixPackages.site;
-        kernel = bochsPackages.linux;
+        inherit kernel;
         rootfs = bochsPackages.rootfs;
         default = runtime;
       };

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Restore a built bundle and run one guest shell command over 9p."""
+"""Restore a built bundle, plug 1 GiB, and run one guest shell command over 9p."""
 
 import json
 import pathlib
@@ -9,8 +9,24 @@ import sys
 import tempfile
 import time
 
+PLUG_BYTES = 1 << 30
 
-def wait_until_running(monitor, vm):
+
+def qmp(stream, command, **arguments):
+    request = {"execute": command}
+    if arguments:
+        request["arguments"] = arguments
+    stream.write(json.dumps(request).encode() + b"\n")
+    stream.flush()
+    while True:
+        reply = json.loads(stream.readline())
+        if "return" in reply:
+            return reply["return"]
+        if "error" in reply:
+            raise RuntimeError(reply["error"])
+
+
+def restore_and_plug(monitor, vm, hotplug):
     deadline = time.monotonic() + 15
     while not monitor.exists():
         if vm.poll() is not None or time.monotonic() >= deadline:
@@ -20,17 +36,16 @@ def wait_until_running(monitor, vm):
         connection.connect(str(monitor))
         with connection.makefile("rwb") as stream:
             stream.readline()
-            for command in ("qmp_capabilities", "query-status"):
-                while True:
-                    stream.write(json.dumps({"execute": command}).encode() + b"\n")
-                    stream.flush()
-                    reply = json.loads(stream.readline())
-                    if "return" in reply:
-                        if command != "query-status" or reply["return"]["status"] == "running":
-                            break
-                        time.sleep(0.01)
-                    elif "error" in reply:
-                        raise RuntimeError(reply["error"])
+            qmp(stream, "qmp_capabilities")
+            while qmp(stream, "query-status")["status"] != "running":
+                time.sleep(0.01)
+            path = f"/machine/peripheral/{hotplug['device']}"
+            qmp(stream, "qom-set", path=path, property="requested-size", value=PLUG_BYTES)
+            deadline = time.monotonic() + 15
+            while qmp(stream, "qom-get", path=path, property="size") != PLUG_BYTES:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("guest did not plug memory")
+                time.sleep(0.01)
 
 
 def main(bundle):
@@ -47,7 +62,10 @@ def main(bundle):
         # Rename so the host never observes the result file before it is written.
         (queue / "run.sh").write_text(
             "#!/bin/sh\n"
-            "/bin/echo activity-vm-qemu-ready $(/bin/date +%s) > /obelisk-activity-vm-http/smoke-result.tmp\n"
+            "/bin/echo activity-vm-qemu-ready $(/bin/date +%s)"
+            " $(/bin/grep MemTotal /proc/meminfo | /bin/tr -s ' ' | /bin/cut -d ' ' -f 2)"
+            " $(($(/bin/stat -f -c '%b * %S' /) / 1024))"
+            " > /obelisk-activity-vm-http/smoke-result.tmp\n"
             "/bin/mv /obelisk-activity-vm-http/smoke-result.tmp /obelisk-activity-vm-http/smoke-result\n"
         )
         args = [arg.format(pack=guest, share=share, queue=queue, ram=machine["ram"])
@@ -64,7 +82,7 @@ def main(bundle):
         )
         console.close()
         try:
-            wait_until_running(monitor, vm)
+            restore_and_plug(monitor, vm, machine["hotplug"])
             now = time.time_ns()
             vm.stdin.write(f"{now // 10**9}.{now % 10**9:09}\n".encode())
             vm.stdin.flush()
@@ -73,12 +91,15 @@ def main(bundle):
             while time.monotonic() < deadline:
                 if result.exists():
                     actual = result.read_text().split()
-                    if len(actual) != 2 or actual[0] != "activity-vm-qemu-ready":
+                    if len(actual) != 4 or actual[0] != "activity-vm-qemu-ready":
                         raise RuntimeError(f"unexpected guest output: {actual!r}")
+                    mem_kib, root_kib = int(actual[2]), int(actual[3])
+                    if mem_kib < (PLUG_BYTES >> 10) or root_kib < (PLUG_BYTES >> 10):
+                        raise RuntimeError(f"plugged memory missing: MemTotal {mem_kib} KiB, / {root_kib} KiB")
                     skew = int(actual[1]) - time.time()
                     if abs(skew) > 5:
                         raise RuntimeError(f"guest clock is off by {skew:.1f} s")
-                    print(f"{actual[0]} (clock skew {skew:.1f} s)")
+                    print(f"{actual[0]} (clock skew {skew:.1f} s, MemTotal {mem_kib >> 10} MiB, / {root_kib >> 10} MiB)")
                     return
                 if vm.poll() is not None:
                     raise RuntimeError(f"QEMU exited {vm.returncode}: {vm.stderr.read()[-4000:]!r}")
