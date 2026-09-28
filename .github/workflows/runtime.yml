@@ -8,15 +8,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag (for example, v1.0.0)
+        description: Release tag, also used as the Docker Hub tag (YYYY-MM-DD, optionally -N for repeat releases)
         required: true
         type: string
 
 permissions:
   contents: write
-
-env:
-  IMAGE_BASE: docker.io/getobelisk/activity-vm-qemu-runtime
 
 jobs:
   build:
@@ -30,9 +27,11 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           TAG: ${{ inputs.tag }}
+          OBELISK_PR_TOKEN: ${{ secrets.RUNTIME_TO_OBELISK_PR }}
         run: |
           [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'Run releases from main' >&2; exit 1; }
-          [[ "$TAG" == v* ]] && git check-ref-format "refs/tags/$TAG"
+          [[ -n "$OBELISK_PR_TOKEN" ]] || { echo 'Secret RUNTIME_TO_OBELISK_PR is not set' >&2; exit 1; }
+          [[ "$TAG" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$ ]] || { echo "Tag $TAG must look like YYYY-MM-DD or YYYY-MM-DD-N" >&2; exit 1; }
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
             echo "Tag $TAG already exists" >&2
             exit 1
@@ -41,23 +40,39 @@ jobs:
             [[ "$status" -eq 2 ]] || exit "$status"
           fi
 
-      - name: Build runtime
+      - name: Build TCG runtime
         run: nix build --print-build-logs
 
-      - name: Restore and run guest command
+      - name: Restore and run TCG guest command
         run: nix develop -c python3 scripts/smoke-test.py result
 
-      - name: Stage runtime
-        run: nix develop -c bash scripts/stage-release.sh result flake.lock builds
-
-      - name: Verify staged runtime
+      - name: Enable KVM access
         run: |
-          nix develop -c bash scripts/install-release.sh builds "$RUNNER_TEMP/activity-vm-qemu-installed"
-          nix develop -c python3 scripts/smoke-test.py "$RUNNER_TEMP/activity-vm-qemu-installed"
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          test -w /dev/kvm
+
+      - name: Build KVM runtime
+        run: nix develop -c bash build-local.sh "$RUNNER_TEMP/activity-vm-qemu-kvm" kvm
+
+      - name: Restore and run KVM guest command
+        run: nix develop -c python3 scripts/smoke-test.py "$RUNNER_TEMP/activity-vm-qemu-kvm"
+
+      - name: Stage runtimes
+        run: |
+          nix develop -c bash scripts/stage-release.sh result flake.lock builds/tcg tcg
+          nix develop -c bash scripts/stage-release.sh "$RUNNER_TEMP/activity-vm-qemu-kvm" flake.lock builds/kvm kvm
+
+      - name: Verify staged runtimes
+        run: |
+          for accel in tcg kvm; do
+            nix develop -c bash scripts/install-release.sh "builds/$accel" "$RUNNER_TEMP/activity-vm-qemu-$accel-installed" "$accel"
+            nix develop -c python3 scripts/smoke-test.py "$RUNNER_TEMP/activity-vm-qemu-$accel-installed"
+          done
 
       - uses: actions/upload-artifact@v7
         with:
-          name: activity-vm-qemu-tcg-${{ github.sha }}
+          name: activity-vm-qemu-runtimes-${{ github.sha }}
           path: builds/
           if-no-files-found: error
           retention-days: 7
@@ -65,7 +80,7 @@ jobs:
       - uses: oras-project/setup-oras@v1
         if: ${{ github.event_name == 'workflow_dispatch' }}
 
-      - name: Push runtime to Docker Hub
+      - name: Push runtimes to Docker Hub
         id: push
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
@@ -74,41 +89,48 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           echo "$DOCKER_HUB_TOKEN" | oras login docker.io -u "$DOCKER_HUB_USERNAME" --password-stdin
-          cd builds
-          printf '%s\n' '{"architecture":"amd64","os":"linux"}' > oci-config.json
-          oras push "${IMAGE_BASE}:${TAG}" \
-            --config oci-config.json:application/vnd.oci.image.config.v1+json \
-            --annotation dev.obelisk.artifact.kind=activity-vm-qemu-tcg.v1 \
-            activity-vm-qemu-tcg.tar.zst:application/vnd.obelisk.activity-vm-qemu-tcg.v1+zstd \
-            qemu-source.txt:text/plain \
-            qemu-version.txt:text/plain \
-            SHA256SUMS:text/plain
-          descriptor=$(oras manifest fetch --descriptor "${IMAGE_BASE}:${TAG}")
-          echo "$descriptor"
-          manifest_digest=$(printf '%s' "$descriptor" | jq -r .digest)
-          echo "reference=oci://${IMAGE_BASE}:${TAG}@${manifest_digest}" >> "$GITHUB_OUTPUT"
+          for accel in tcg kvm; do
+            image="docker.io/getobelisk/activity-vm-qemu-${accel}-runtime"
+            (
+              cd "builds/$accel"
+              printf '%s\n' '{"architecture":"amd64","os":"linux"}' > oci-config.json
+              oras push "${image}:${TAG}" \
+                --config oci-config.json:application/vnd.oci.image.config.v1+json \
+                --annotation "dev.obelisk.artifact.kind=activity-vm-qemu-${accel}.v1" \
+                "activity-vm-qemu-${accel}.tar.zst:application/vnd.obelisk.activity-vm-qemu-${accel}.v1+zstd" \
+                qemu-source.txt:text/plain \
+                qemu-version.txt:text/plain \
+                SHA256SUMS:text/plain
+            )
+            descriptor=$(oras manifest fetch --descriptor "${image}:${TAG}")
+            echo "$descriptor"
+            manifest_digest=$(printf '%s' "$descriptor" | jq -er .digest)
+            echo "${accel}_reference=oci://${image}:${TAG}@${manifest_digest}" >> "$GITHUB_OUTPUT"
+          done
 
       - name: Open obelisk version-bump PR
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           GH_TOKEN: ${{ secrets.RUNTIME_TO_OBELISK_PR }}
-          REFERENCE: ${{ steps.push.outputs.reference }}
+          TCG_REFERENCE: ${{ steps.push.outputs.tcg_reference }}
+          KVM_REFERENCE: ${{ steps.push.outputs.kvm_reference }}
           TAG: ${{ inputs.tag }}
         run: |
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/obeli-sk/obelisk.git" obelisk-clone
           cd obelisk-clone
-          branch="bump/activity-vm-qemu-runtime-${TAG}"
+          branch="bump/activity-vm-qemu-runtimes-${TAG}"
           git switch -c "$branch"
-          printf '%s' "$REFERENCE" > crates/embedded-assets/activity-vm-qemu-runtime-version.txt
+          printf '%s' "$TCG_REFERENCE" > crates/embedded-assets/activity-vm-qemu-tcg-runtime-version.txt
+          printf '%s' "$KVM_REFERENCE" > crates/embedded-assets/activity-vm-qemu-kvm-runtime-version.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add crates/embedded-assets/activity-vm-qemu-runtime-version.txt
-          git commit -m "chore: bump activity-vm-qemu-runtime to ${TAG}"
+          git add crates/embedded-assets/activity-vm-qemu-tcg-runtime-version.txt crates/embedded-assets/activity-vm-qemu-kvm-runtime-version.txt
+          git commit -m "chore: bump activity-vm-qemu runtimes to ${TAG}"
           git push origin "$branch"
           # shellcheck disable=SC2016
-          body=$(printf 'Automated bump of the native QEMU activity VM runtime OCI reference to `%s`.\n\nReference: `%s`\n' "$TAG" "$REFERENCE")
+          body=$(printf 'Automated bump of the native QEMU activity VM runtimes to `%s`.\n\nTCG: `%s`\nKVM: `%s`\n' "$TAG" "$TCG_REFERENCE" "$KVM_REFERENCE")
           gh pr create --repo obeli-sk/obelisk --base main --head "$branch" \
-            --title "chore: bump activity-vm-qemu-runtime to ${TAG}" \
+            --title "chore: bump activity-vm-qemu runtimes to ${TAG}" \
             --body "$body"
 
       - name: Create release tag

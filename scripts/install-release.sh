@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if (( $# != 2 )); then
-  echo 'usage: install-release.sh RELEASE_DIR OUTPUT_DIR' >&2
+if (( $# != 3 )); then
+  echo 'usage: install-release.sh RELEASE_DIR OUTPUT_DIR [tcg|kvm]' >&2
   exit 2
 fi
 
 release=$1
 output=$2
+accel=$3
+if [[ "$accel" != tcg && "$accel" != kvm ]]; then
+  echo "unsupported accelerator: $accel" >&2
+  exit 2
+fi
 (
   cd "$release"
   sha256sum -c SHA256SUMS
@@ -21,7 +26,7 @@ if [[ "$actual_version" != "$expected_version" ]]; then
   exit 1
 fi
 mkdir -p "$output"
-zstd -dc "$release/activity-vm-qemu-tcg.tar.zst" | tar -C "$output" -xf -
+zstd -dc "$release/activity-vm-qemu-$accel.tar.zst" | tar -C "$output" -xf -
 if [[ "$(cat "$output/qemu-version.txt")" != "$expected_version" ]]; then
   echo "QEMU version in bundle does not match release metadata" >&2
   exit 1
