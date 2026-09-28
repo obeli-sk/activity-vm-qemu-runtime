@@ -13,6 +13,10 @@
       pkgs = nixpkgs.legacyPackages.${system};
       trynixPackages = trynix.packages.${system};
       bochsPackages = bochs-runtime.packages.${system};
+      settime = pkgs.pkgsStatic.runCommandCC "settime" { } ''
+        mkdir -p $out/bin
+        $CC -O2 -Wall -Werror -o $out/bin/settime ${./settime.c}
+      '';
       runtime = pkgs.runCommand "activity-vm-qemu-tcg-runtime" {
         src = ./.;
         nativeBuildInputs = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 ];
@@ -22,12 +26,13 @@
           ${bochsPackages.linux}/bzImage \
           ${bochsPackages.rootfs}/rootfs.bin \
           ${trynixPackages.site}/guest \
+          ${settime}/bin/settime \
           "$out" tcg
         python3 "$src/make-snapshot.py" "$out"
       '';
     in {
       packages.${system} = {
-        inherit runtime;
+        inherit runtime settime;
         qemu-tcg = pkgs.qemu;
         qemu-kvm = pkgs.qemu;
         site = trynixPackages.site;

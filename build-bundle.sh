@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if (( $# < 5 || $# > 6 )); then
-  echo 'usage: build-bundle.sh QEMU_PATH KERNEL_PATH ROOTFS_ISO BIOS_DIR OUTPUT_DIR [tcg|kvm]' >&2
+if (( $# < 6 || $# > 7 )); then
+  echo 'usage: build-bundle.sh QEMU_PATH KERNEL_PATH ROOTFS_ISO BIOS_DIR SETTIME_PATH OUTPUT_DIR [tcg|kvm]' >&2
   exit 2
 fi
 
@@ -10,8 +10,9 @@ qemu=$1
 kernel=$2
 rootfs=$3
 bios_dir=$4
-output=$5
-accel=${6:-tcg}
+settime=$5
+output=$6
+accel=${7:-tcg}
 if [[ "$accel" != tcg && "$accel" != kvm ]]; then
   echo "unsupported accelerator: $accel" >&2
   exit 2
@@ -29,6 +30,7 @@ cp "$source_dir/init" "$root/init"
 chmod 755 "$root/init"
 bsdtar -xOf "$bios_dir/initramfs.cpio.gz" bin/reseed > "$root/bin/reseed"
 chmod 755 "$root/bin/reseed"
+install -m 755 "$settime" "$root/bin/settime"
 mkdir -p "$root/share"
 # Processes without CAP_DAC_OVERRIDE (e.g. Chromium's children) must traverse / and write /tmp.
 chmod 755 "$root"

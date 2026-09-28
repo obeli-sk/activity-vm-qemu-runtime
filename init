@@ -12,8 +12,10 @@ nft -f /usr/share/obelisk/activity-vm.nft
 echo 1 > /proc/sys/vm/overcommit_memory
 echo 'obelisk-native-qemu: ready for snapshot'
 
-IFS= read -r _ < /dev/console
+# The host sends its wall clock; the snapshot's clock is frozen at build time.
+IFS= read -r now < /dev/console
 /bin/reseed
+[ -z "$now" ] || /bin/settime "$now"
 mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576,cache=loose,negtimeout=0 store0 /share
 mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none queue0 /obelisk-activity-vm-http
 rm -rf /nix /obelisk-activity

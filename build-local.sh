@@ -31,11 +31,13 @@ fi
 site=$(nix build --no-link --print-out-paths .#site)
 kernel=$(nix build --no-link --print-out-paths .#kernel)
 rootfs=$(nix build --no-link --print-out-paths .#rootfs)
+settime=$(nix build --no-link --print-out-paths .#settime)
 bash "$source_dir/build-bundle.sh" \
   "$qemu/bin/qemu-system-x86_64" \
   "$kernel/bzImage" \
   "$rootfs/rootfs.bin" \
   "$site/guest" \
+  "$settime/bin/settime" \
   "$1" \
   "$accel"
 python3 "$source_dir/make-snapshot.py" "$1"

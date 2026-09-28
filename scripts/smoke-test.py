@@ -47,7 +47,7 @@ def main(bundle):
         # Rename so the host never observes the result file before it is written.
         (queue / "run.sh").write_text(
             "#!/bin/sh\n"
-            "/bin/echo activity-vm-qemu-ready > /obelisk-activity-vm-http/smoke-result.tmp\n"
+            "/bin/echo activity-vm-qemu-ready $(/bin/date +%s) > /obelisk-activity-vm-http/smoke-result.tmp\n"
             "/bin/mv /obelisk-activity-vm-http/smoke-result.tmp /obelisk-activity-vm-http/smoke-result\n"
         )
         args = [arg.format(pack=guest, share=share, queue=queue, ram=machine["ram"])
@@ -65,16 +65,20 @@ def main(bundle):
         console.close()
         try:
             wait_until_running(monitor, vm)
-            vm.stdin.write(b"\n")
+            now = time.time_ns()
+            vm.stdin.write(f"{now // 10**9}.{now % 10**9:09}\n".encode())
             vm.stdin.flush()
             result = queue / "smoke-result"
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
                 if result.exists():
-                    actual = result.read_text().strip()
-                    if actual != "activity-vm-qemu-ready":
+                    actual = result.read_text().split()
+                    if len(actual) != 2 or actual[0] != "activity-vm-qemu-ready":
                         raise RuntimeError(f"unexpected guest output: {actual!r}")
-                    print(actual)
+                    skew = int(actual[1]) - time.time()
+                    if abs(skew) > 5:
+                        raise RuntimeError(f"guest clock is off by {skew:.1f} s")
+                    print(f"{actual[0]} (clock skew {skew:.1f} s)")
                     return
                 if vm.poll() is not None:
                     raise RuntimeError(f"QEMU exited {vm.returncode}: {vm.stderr.read()[-4000:]!r}")
