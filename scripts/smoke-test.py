@@ -44,7 +44,12 @@ def main(bundle):
         queue = work / "queue"
         share.mkdir()
         queue.mkdir()
-        (queue / "run.sh").write_text("#!/bin/sh\n/bin/echo activity-vm-qemu-ready > /obelisk-activity-vm-http/smoke-result\n")
+        # Rename so the host never observes the result file before it is written.
+        (queue / "run.sh").write_text(
+            "#!/bin/sh\n"
+            "/bin/echo activity-vm-qemu-ready > /obelisk-activity-vm-http/smoke-result.tmp\n"
+            "/bin/mv /obelisk-activity-vm-http/smoke-result.tmp /obelisk-activity-vm-http/smoke-result\n"
+        )
         args = [arg.format(pack=guest, share=share, queue=queue, ram=machine["ram"])
                 for arg in machine["args"]]
         monitor = work / "qmp.sock"
