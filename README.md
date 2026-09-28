@@ -15,13 +15,14 @@ nix develop -c python3 scripts/smoke-test.py result
 
 The smoke test restores the snapshot, mounts the 9p mailbox, runs `/bin/echo`
 in the guest, and checks its output. The Nix output contains `guest/`,
-`vm.state`, and `qemu-path`. The path names the exact QEMU build used to create
-the snapshot. Obelisk cannot safely restore it with a different QEMU build.
+`vm.state`, `qemu-path`, and `qemu-version.txt`. The path names the exact QEMU
+build used to create the snapshot. Obelisk cannot safely restore it with a
+different QEMU build.
 
 To use this output with the native backend in Obelisk:
 
 ```sh
-export OBELISK_UNSTABLE_ACTIVITY_VM=qemu_native
+export OBELISK_UNSTABLE_ACTIVITY_VM=qemu-tcg
 export OBELISK_NATIVE_QEMU_BUNDLE=$(readlink -f result)
 ```
 
@@ -31,16 +32,17 @@ future work, even though QEMU TCG can emulate x86_64 on those hosts.
 ## Release artifact
 
 The GitHub Actions workflow builds and smoke tests the TCG bundle on every PR
-and push. It uploads a compressed bundle plus the pinned TryNix QEMU source
-reference. After the Obelisk native QEMU backend is merged, run the `runtime`
-workflow on `main` with a new `v*` tag to publish the bundle to
+and push. It uploads a compressed bundle, the pinned Nixpkgs QEMU source
+reference, and the QEMU version (currently 11.1.1). After the Obelisk native
+QEMU backend is merged, run the `runtime` workflow on `main` with a new `v*`
+tag to publish the bundle to
 `docker.io/getobelisk/activity-vm-qemu-runtime` using ORAS. The workflow opens
 an Obelisk PR containing the digest-pinned OCI reference with no trailing
 newline, then creates the release tag in this repository. Publication requires
 `DOCKER_HUB_USERNAME`, `DOCKER_HUB_TOKEN`, and `RUNTIME_TO_OBELISK_PR` secrets.
 
 The OCI artifact carries the guest and snapshot. Installation requires Nix to
-fetch the matching QEMU from the pinned TryNix source. The installer checks its
+fetch the matching standard QEMU from pinned Nixpkgs. The installer checks its
 store path against the bundle before reporting success:
 
 ```sh
@@ -58,7 +60,7 @@ nix develop -c python3 scripts/smoke-test.py /tmp/obelisk-qemu-installed
 
 ## KVM development build
 
-The KVM profile uses the pinned Nixpkgs QEMU and makes a separate snapshot on
+The KVM profile uses the same pinned Nixpkgs QEMU and makes a separate snapshot on
 a machine whose user can write `/dev/kvm`:
 
 ```sh
@@ -70,6 +72,6 @@ and artifact test before release. The two snapshots are never interchangeable.
 
 ## Inputs
 
-The flake locks TryNix's QEMU and site, the Bochs runtime's Linux kernel and
-rootfs, and Nixpkgs for the build tools and optional KVM QEMU. Obelisk's native
-QEMU runner and activity launcher remain in the Obelisk repository.
+The flake locks Nixpkgs QEMU, the TryNix site, and the Bochs runtime's Linux
+kernel and rootfs. Obelisk's native QEMU runner and activity launcher remain
+in the Obelisk repository.

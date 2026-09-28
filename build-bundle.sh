@@ -41,3 +41,6 @@ if [[ "$accel" == kvm ]]; then
   sed -i 's/tcg,tb-size=500/kvm/' "$output/guest/machine.json"
 fi
 printf '%s\n' "$qemu" > "$output/qemu-path"
+qemu_version=$("$qemu" --version | sed -n '1s/^QEMU emulator version //p')
+test -n "$qemu_version"
+printf '%s\n' "$qemu_version" > "$output/qemu-version.txt"

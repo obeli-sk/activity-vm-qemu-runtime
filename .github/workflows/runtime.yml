@@ -50,6 +50,11 @@ jobs:
       - name: Stage runtime
         run: nix develop -c bash scripts/stage-release.sh result flake.lock builds
 
+      - name: Verify staged runtime
+        run: |
+          nix develop -c bash scripts/install-release.sh builds "$RUNNER_TEMP/activity-vm-qemu-installed"
+          nix develop -c python3 scripts/smoke-test.py "$RUNNER_TEMP/activity-vm-qemu-installed"
+
       - uses: actions/upload-artifact@v7
         with:
           name: activity-vm-qemu-tcg-${{ github.sha }}
@@ -76,6 +81,7 @@ jobs:
             --annotation dev.obelisk.artifact.kind=activity-vm-qemu-tcg.v1 \
             activity-vm-qemu-tcg.tar.zst:application/vnd.obelisk.activity-vm-qemu-tcg.v1+zstd \
             qemu-source.txt:text/plain \
+            qemu-version.txt:text/plain \
             SHA256SUMS:text/plain
           descriptor=$(oras manifest fetch --descriptor "${IMAGE_BASE}:${TAG}")
           echo "$descriptor"

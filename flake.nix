@@ -18,7 +18,7 @@
         nativeBuildInputs = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 ];
       } ''
         bash "$src/build-bundle.sh" \
-          ${trynixPackages.native-qemu}/bin/qemu-system-x86_64 \
+          ${pkgs.qemu}/bin/qemu-system-x86_64 \
           ${bochsPackages.linux}/bzImage \
           ${bochsPackages.rootfs}/rootfs.bin \
           ${trynixPackages.site}/guest \
@@ -28,7 +28,7 @@
     in {
       packages.${system} = {
         inherit runtime;
-        qemu-tcg = trynixPackages.native-qemu;
+        qemu-tcg = pkgs.qemu;
         qemu-kvm = pkgs.qemu;
         site = trynixPackages.site;
         kernel = bochsPackages.linux;
