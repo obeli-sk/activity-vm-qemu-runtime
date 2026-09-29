@@ -33,7 +33,9 @@ clock, Obelisk plugs an activity's extra RAM over QMP and hot-adds its extra vCP
 `cpu_hotplug.max`. It sends the vCPU count after the clock; `init` waits for ACPI to register
 the new vCPUs, onlines them, and resizes the root filesystem to 90% of the enlarged RAM. The
 kernel is the Bochs runtime's kernel with SMP, ACPI CPU hotplug, memory hotplug, and
-`virtio-mem` enabled. The guest boots with `rcupdate.rcu_expedited=1`; without it, the first
+`virtio-mem` enabled. The CPU vendor is pinned to GenuineIntel: under KVM, QEMU otherwise exposes the vendor of
+the host that built the snapshot, and a guest booted as AMD distrusts its TSC and cannot online
+Intel vCPUs hot-added after restore. The guest boots with `rcupdate.rcu_expedited=1`; without it, the first
 plug after restore waits about 0.5 s on KVM for an RCU grace period. `noreplace-smp` keeps the
 kernel's SMP code in place, so onlining the first extra vCPU does not rewrite kernel text, which
 costs TCG about 45 ms of retranslation.

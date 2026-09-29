@@ -4,7 +4,7 @@
   "hotplug": { "device": "vmem", "max_bytes": 17179869184, "block_bytes": 2097152 },
   "args": [
     "-nographic",
-    "-cpu", "Haswell-v4,+rdrand",
+    "-cpu", "Haswell-v4,+rdrand,vendor=GenuineIntel",
     "-device", "virtio-rng-pci",
     "-smp", "1,maxcpus=16",
     "-m", "{ram},maxmem=17G",

@@ -70,6 +70,8 @@ def main(bundle):
             " $(/bin/grep MemTotal /proc/meminfo | /bin/tr -s ' ' | /bin/cut -d ' ' -f 2)"
             " $(($(/bin/stat -f -c '%b * %S' /) / 1024))"
             " $(/bin/nproc)"
+            " $(/bin/grep -m1 vendor_id /proc/cpuinfo | /bin/tr -d ' \\t' | /bin/cut -d : -f 2)"
+            " $(/bin/cat /sys/devices/system/clocksource/clocksource0/current_clocksource)"
             " > /obelisk-activity-vm-http/smoke-result.tmp\n"
             "/bin/mv /obelisk-activity-vm-http/smoke-result.tmp /obelisk-activity-vm-http/smoke-result\n"
         )
@@ -96,17 +98,21 @@ def main(bundle):
             while time.monotonic() < deadline:
                 if result.exists():
                     actual = result.read_text().split()
-                    if len(actual) != 5 or actual[0] != "activity-vm-qemu-ready":
+                    if len(actual) != 7 or actual[0] != "activity-vm-qemu-ready":
                         raise RuntimeError(f"unexpected guest output: {actual!r}")
                     mem_kib, root_kib = int(actual[2]), int(actual[3])
                     if mem_kib < (PLUG_BYTES >> 10) or root_kib < (PLUG_BYTES >> 10):
                         raise RuntimeError(f"plugged memory missing: MemTotal {mem_kib} KiB, / {root_kib} KiB")
                     if int(actual[4]) != CPUS:
                         raise RuntimeError(f"guest has {actual[4]} vCPUs, expected {CPUS}")
+                    # KVM exposes the build host's vendor unless it is pinned, and a non-Intel
+                    # guest with hotplug slots distrusts its TSC and falls back to HPET.
+                    if actual[5] != "GenuineIntel" or not actual[6].startswith("tsc"):
+                        raise RuntimeError(f"guest CPU is {actual[5]} with clocksource {actual[6]}")
                     skew = int(actual[1]) - time.time()
                     if abs(skew) > 5:
                         raise RuntimeError(f"guest clock is off by {skew:.1f} s")
-                    print(f"{actual[0]} (clock skew {skew:.1f} s, MemTotal {mem_kib >> 10} MiB, / {root_kib >> 10} MiB, {CPUS} vCPUs)")
+                    print(f"{actual[0]} (clock skew {skew:.1f} s, MemTotal {mem_kib >> 10} MiB, / {root_kib >> 10} MiB, {CPUS} vCPUs, {actual[5]}, {actual[6]})")
                     return
                 if vm.poll() is not None:
                     raise RuntimeError(f"QEMU exited {vm.returncode}: {vm.stderr.read()[-4000:]!r}")
