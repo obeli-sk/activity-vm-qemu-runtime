@@ -15,17 +15,19 @@
       bochsPackages = bochs-runtime.packages.${system};
       # virtio-mem lets Obelisk plug guest RAM after restore, so one snapshot serves every size.
       # VIRTIO_MEM depends on EXCLUSIVE_SYSTEM_RAM, which needs STRICT_DEVMEM. The Bochs kernel
-      # is uniprocessor, so SMP is needed for the snapshot's vCPUs.
+      # is uniprocessor; SMP and ACPI CPU hotplug let Obelisk add vCPUs after restore too.
       kernel = bochsPackages.linux.overrideAttrs (old: {
         postPatch = old.postPatch + ''
           scripts/config --file .config \
             -e MEMORY_HOTPLUG -e MEMORY_HOTPLUG_DEFAULT_ONLINE -e MEMORY_HOTREMOVE \
             -e MHP_MEMMAP_ON_MEMORY -e STRICT_DEVMEM -e VIRTIO_MEM \
-            -e SMP --set-val NR_CPUS 64
+            -e SMP --set-val NR_CPUS 64 \
+            -e ACPI_CONTAINER -e ACPI_HOTPLUG_CPU
         '';
         postBuild = ''
           grep -qx CONFIG_VIRTIO_MEM=y .config
           grep -qx CONFIG_SMP=y .config
+          grep -qx CONFIG_ACPI_HOTPLUG_CPU=y .config
         '';
       });
       settime = pkgs.pkgsStatic.runCommandCC "settime" { } ''

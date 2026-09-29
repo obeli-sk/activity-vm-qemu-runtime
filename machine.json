@@ -1,11 +1,12 @@
 {
   "ram": "256M",
+  "cpu_hotplug": { "max": 16 },
   "hotplug": { "device": "vmem", "max_bytes": 17179869184, "block_bytes": 2097152 },
   "args": [
     "-nographic",
     "-cpu", "Haswell-v4,+rdrand",
     "-device", "virtio-rng-pci",
-    "-smp", "4",
+    "-smp", "1,maxcpus=16",
     "-m", "{ram},maxmem=17G",
     "-object", "memory-backend-ram,id=vmem0,size=16G,reserve=off",
     "-device", "virtio-mem-pci,id=vmem,memdev=vmem0,requested-size=0,block-size=2M",
@@ -18,6 +19,6 @@
     "-device", "virtio-9p-pci,fsdev=store0,mount_tag=store0,ioeventfd=off",
     "-fsdev", "local,id=queue0,path={queue},security_model=none,multidevs=remap",
     "-device", "virtio-9p-pci,fsdev=queue0,mount_tag=queue0,ioeventfd=off",
-    "-append", "console=ttyS0 rdinit=/init loglevel=4 mitigations=off rcupdate.rcu_expedited=1"
+    "-append", "console=ttyS0 rdinit=/init loglevel=4 mitigations=off rcupdate.rcu_expedited=1 noreplace-smp"
   ]
 }

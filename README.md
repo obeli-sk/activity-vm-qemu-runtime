@@ -27,13 +27,16 @@ export OBELISK_UNSTABLE_ACTIVITY_VM=qemu-tcg
 export OBELISK_NATIVE_QEMU_BUNDLE=$(readlink -f result)
 ```
 
-The snapshot has 4 vCPUs, 256 MiB of RAM, and an empty 16 GiB `virtio-mem` device, described
-by `hotplug` in `guest/machine.json`. Obelisk plugs an activity's extra RAM over
-QMP after restoring the snapshot and before sending the wall clock, and `init`
-then resizes the root filesystem to 90% of the enlarged RAM. The kernel is the
-Bochs runtime's kernel with SMP, memory hotplug, and `virtio-mem` enabled. The guest
-boots with `rcupdate.rcu_expedited=1`; without it, the first plug after restore
-waits about 0.5 s on KVM for an RCU grace period.
+The snapshot has 1 vCPU, 256 MiB of RAM, and an empty 16 GiB `virtio-mem` device, described
+by `hotplug` in `guest/machine.json`. After restoring the snapshot and before sending the wall
+clock, Obelisk plugs an activity's extra RAM over QMP and hot-adds its extra vCPUs, up to
+`cpu_hotplug.max`. It sends the vCPU count after the clock; `init` waits for ACPI to register
+the new vCPUs, onlines them, and resizes the root filesystem to 90% of the enlarged RAM. The
+kernel is the Bochs runtime's kernel with SMP, ACPI CPU hotplug, memory hotplug, and
+`virtio-mem` enabled. The guest boots with `rcupdate.rcu_expedited=1`; without it, the first
+plug after restore waits about 0.5 s on KVM for an RCU grace period. `noreplace-smp` keeps the
+kernel's SMP code in place, so onlining the first extra vCPU does not rewrite kernel text, which
+costs TCG about 45 ms of retranslation.
 
 The backend currently supports Linux x86_64. macOS and Linux ARM builds are
 future work, even though QEMU TCG can emulate x86_64 on those hosts.

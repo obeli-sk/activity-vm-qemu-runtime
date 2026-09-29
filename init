@@ -13,9 +13,19 @@ echo 1 > /proc/sys/vm/overcommit_memory
 echo 'obelisk-native-qemu: ready for snapshot'
 
 # The host sends its wall clock; the snapshot's clock is frozen at build time.
-IFS= read -r now < /dev/console
+IFS=' ' read -r now cpus < /dev/console
 /bin/reseed
 [ -z "$now" ] || /bin/settime "$now"
+# The host hot-adds vCPUs before sending the clock. ACPI registers them asynchronously and
+# Linux leaves them offline; the boot CPU has no online file.
+if [ "${cpus:-1}" -gt 1 ]; then
+  while [ "$(ls /sys/devices/system/cpu/cpu*/online 2>/dev/null | wc -l)" -lt "$((cpus - 1))" ]; do
+    usleep 1000
+  done
+  for online in /sys/devices/system/cpu/cpu*/online; do
+    [ "$(cat "$online")" = 1 ] || echo 1 > "$online"
+  done
+fi
 # The host plugs extra RAM before sending the clock; the rootfs size limit was fixed at boot.
 mount -o remount,size=90% /
 mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576,cache=loose,negtimeout=0 store0 /share
