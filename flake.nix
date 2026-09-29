@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/e158d9ed9b51c98974c5e66e1ba1c9e0255fecaa";
     trynix.url = "github:fzakaria/trynix/7e7e793594cb58efb48279b17b4e15bbc6fbe91b";
-    bochs-runtime.url = "github:obeli-sk/activity-vm-bochs-runtime/b4710a4fb7c4dec97315e70323219f83f799d725";
+    bochs-runtime.url = "github:obeli-sk/activity-vm-bochs-runtime/d8e3d71965f01b4a2b63b4d84af8d37eecda137f";
   };
 
   outputs = { nixpkgs, trynix, bochs-runtime, ... }:

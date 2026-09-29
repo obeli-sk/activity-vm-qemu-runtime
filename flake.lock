@@ -22,17 +22,17 @@
     "bochs": {
       "flake": false,
       "locked": {
-        "lastModified": 1789420699,
-        "narHash": "sha256-Th1BW9OZMhtpY/JqzU/w3JqfojgJR2dhM5m9/duuBdM=",
+        "lastModified": 1790601778,
+        "narHash": "sha256-zW6tzkeYB8I2gQHBy6g5db+mvC9dbEhSXZIvtONZqm4=",
         "owner": "obeli-sk",
         "repo": "activity-vm-bochs",
-        "rev": "86964d7dd68711afa075dcdb267106aef40f83b6",
+        "rev": "039b8a614b197d900306921f5dabbebe387c6b35",
         "type": "github"
       },
       "original": {
         "owner": "obeli-sk",
         "repo": "activity-vm-bochs",
-        "rev": "86964d7dd68711afa075dcdb267106aef40f83b6",
+        "rev": "039b8a614b197d900306921f5dabbebe387c6b35",
         "type": "github"
       }
     },
@@ -48,17 +48,17 @@
         "wizer": "wizer"
       },
       "locked": {
-        "lastModified": 1789719863,
-        "narHash": "sha256-TPiTJv3yfmaHVCP2VS00gKJFvexJkMvBFC/wsrLiryI=",
+        "lastModified": 1790613199,
+        "narHash": "sha256-/sDmt1iiaxvCSv1psd/qrwu7Py0/QVp334xqMHlOPjY=",
         "owner": "obeli-sk",
         "repo": "activity-vm-bochs-runtime",
-        "rev": "b4710a4fb7c4dec97315e70323219f83f799d725",
+        "rev": "d8e3d71965f01b4a2b63b4d84af8d37eecda137f",
         "type": "github"
       },
       "original": {
         "owner": "obeli-sk",
         "repo": "activity-vm-bochs-runtime",
-        "rev": "b4710a4fb7c4dec97315e70323219f83f799d725",
+        "rev": "d8e3d71965f01b4a2b63b4d84af8d37eecda137f",
         "type": "github"
       }
     },
