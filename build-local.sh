@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if (( $# < 1 || $# > 2 )); then
-  echo 'usage: build-local.sh OUTPUT_DIR [tcg|kvm]' >&2
+if (( $# < 1 || $# > 4 )); then
+  echo 'usage: build-local.sh OUTPUT_DIR [tcg|kvm] [erofs|9p] [vsock|9p]' >&2
   exit 2
 fi
 
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 accel=${2:-tcg}
+store_mode=${3:-erofs}
+mailbox_mode=${4:-9p}
 if [[ "$accel" != tcg && "$accel" != kvm ]]; then
   echo "unsupported accelerator: $accel" >&2
   exit 2
@@ -32,6 +34,8 @@ site=$(nix build --no-link --print-out-paths .#site)
 kernel=$(nix build --no-link --print-out-paths .#kernel)
 rootfs=$(nix build --no-link --print-out-paths .#rootfs)
 settime=$(nix build --no-link --print-out-paths .#settime)
+mailbox=$(nix build --no-link --print-out-paths .#mailbox)
+vhost_vsock=$(nix build --no-link --print-out-paths '.#vhost-vsock^out')
 bash "$source_dir/build-bundle.sh" \
   "$qemu/bin/qemu-system-x86_64" \
   "$kernel/bzImage" \
@@ -39,5 +43,9 @@ bash "$source_dir/build-bundle.sh" \
   "$site/guest" \
   "$settime/bin/settime" \
   "$1" \
-  "$accel"
+  "$accel" \
+  "$mailbox/bin/mailbox" \
+  "$vhost_vsock/bin/vhost-device-vsock" \
+  "$store_mode" \
+  "$mailbox_mode"
 python3 "$source_dir/make-snapshot.py" "$1"

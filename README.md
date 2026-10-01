@@ -93,6 +93,21 @@ The runner builds one closure image per mapping set per server process. The driv
 is always 16 GiB so its capacity matches the drive captured in the snapshot;
 the unused space is sparse.
 
+The default bundle uses EROFS for the closure and 9p for the writable
+proxy/result mailbox. An opt-in vhost-user vsock prototype uses the same
+mailbox protocol as Firecracker. QEMU cannot migrate the vsock device, so the
+snapshot contains only its chardev; Obelisk attaches the device over QMP after
+restore, and the guest rescans PCI before starting the mailbox. Both base and
+hotplug memory use shared memfd backends, as required by vhost-user. The bundle
+records the exact `vhost-device-vsock` binary used by the runner. To compare
+the old 9p paths locally, select each transport independently:
+
+```sh
+nix develop -c bash build-local.sh /tmp/obelisk-qemu-9p kvm 9p 9p
+nix develop -c bash build-local.sh /tmp/obelisk-qemu-9p-vsock kvm 9p vsock
+nix develop -c bash build-local.sh /tmp/obelisk-qemu-erofs-vsock kvm erofs vsock
+```
+
 ## Inputs
 
 The flake locks Nixpkgs QEMU, the TryNix site, and the Bochs runtime's Linux

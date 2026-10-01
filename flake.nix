@@ -22,22 +22,28 @@
             -e MEMORY_HOTPLUG -e MEMORY_HOTPLUG_DEFAULT_ONLINE -e MEMORY_HOTREMOVE \
             -e MHP_MEMMAP_ON_MEMORY -e STRICT_DEVMEM -e VIRTIO_MEM \
             -e SMP --set-val NR_CPUS 64 \
-            -e ACPI_CONTAINER -e ACPI_HOTPLUG_CPU -e EROFS_FS
+            -e ACPI_CONTAINER -e ACPI_HOTPLUG_CPU -e EROFS_FS \
+            -e VSOCKETS -e VIRTIO_VSOCKETS
         '';
         postBuild = ''
           grep -qx CONFIG_VIRTIO_MEM=y .config
           grep -qx CONFIG_SMP=y .config
           grep -qx CONFIG_ACPI_HOTPLUG_CPU=y .config
           grep -qx CONFIG_EROFS_FS=y .config
+          grep -qx CONFIG_VIRTIO_VSOCKETS=y .config
         '';
       });
       settime = pkgs.pkgsStatic.runCommandCC "settime" { } ''
         mkdir -p $out/bin
         $CC -O2 -Wall -Werror -o $out/bin/settime ${./settime.c}
       '';
+      mailbox = pkgs.pkgsStatic.runCommandCC "mailbox" { } ''
+        mkdir -p $out/bin
+        $CC -O2 -Wall -Werror -o $out/bin/mailbox ${./mailbox.c}
+      '';
       runtime = pkgs.runCommand "activity-vm-qemu-tcg-runtime" {
         src = ./.;
-        nativeBuildInputs = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 pkgs.erofs-utils ];
+        nativeBuildInputs = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 pkgs.erofs-utils pkgs.vhost-device-vsock ];
       } ''
         bash "$src/build-bundle.sh" \
           ${pkgs.qemu}/bin/qemu-system-x86_64 \
@@ -45,12 +51,16 @@
           ${bochsPackages.rootfs}/rootfs.bin \
           ${trynixPackages.site}/guest \
           ${settime}/bin/settime \
-          "$out" tcg
+          "$out" tcg \
+          ${mailbox}/bin/mailbox \
+          ${pkgs.vhost-device-vsock}/bin/vhost-device-vsock \
+          erofs 9p
         python3 "$src/make-snapshot.py" "$out"
       '';
     in {
       packages.${system} = {
-        inherit runtime settime;
+        inherit runtime settime mailbox;
+        vhost-vsock = pkgs.vhost-device-vsock;
         qemu-tcg = pkgs.qemu;
         qemu-kvm = pkgs.qemu;
         site = trynixPackages.site;
@@ -60,7 +70,7 @@
       };
       checks.${system}.runtime = runtime;
       devShells.${system}.default = pkgs.mkShell {
-        packages = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 pkgs.jq pkgs.zstd pkgs.erofs-utils ];
+        packages = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 pkgs.jq pkgs.zstd pkgs.erofs-utils pkgs.vhost-device-vsock ];
       };
     };
 }

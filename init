@@ -28,11 +28,24 @@ if [ "${cpus:-1}" -gt 1 ]; then
 fi
 # The host plugs extra RAM before sending the clock; the rootfs size limit was fixed at boot.
 mount -o remount,size=90% /
-mount -t erofs -o ro /dev/vda /share
-mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none queue0 /obelisk-activity-vm-http
+if [ -x /bin/mailbox ]; then echo 1 > /sys/bus/pci/rescan; fi
+if [ -b /dev/vda ]; then
+  mount -t erofs -o ro /dev/vda /share
+else
+  mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576,cache=loose,negtimeout=0 store0 /share
+fi
+if [ -x /bin/mailbox ]; then
+  mount -t tmpfs -o mode=0755 mailbox /obelisk-activity-vm-http
+else
+  mount -t 9p -o trans=virtio,version=9p2000.L,msize=8192,cache=none queue0 /obelisk-activity-vm-http
+fi
 rm -rf /nix /obelisk-activity
 ln -s /share/nix /nix
 ln -s /share/obelisk-activity /obelisk-activity
 echo 'obelisk-native-qemu: shares mounted'
+if [ -x /bin/mailbox ]; then
+  /bin/mailbox /obelisk-activity-vm-http 1024 &
+  while [ ! -f /obelisk-activity-vm-http/run.sh ]; do usleep 1000; done
+fi
 /bin/sh /obelisk-activity-vm-http/run.sh
 while :; do sleep 3600; done
