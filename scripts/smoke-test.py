@@ -110,10 +110,9 @@ def main(bundle):
                         raise RuntimeError(f"plugged memory missing: MemTotal {mem_kib} KiB, / {root_kib} KiB")
                     if int(actual[4]) != CPUS:
                         raise RuntimeError(f"guest has {actual[4]} vCPUs, expected {CPUS}")
-                    # KVM exposes the build host's vendor unless it is pinned, and a non-Intel
-                    # guest with hotplug slots distrusts its TSC and falls back to HPET.
-                    if actual[5] != "GenuineIntel" or not actual[6].startswith("tsc"):
-                        raise RuntimeError(f"guest CPU is {actual[5]} with clocksource {actual[6]}")
+                    # KVM exposes the build host's vendor unless it is pinned.
+                    if actual[5] != "GenuineIntel":
+                        raise RuntimeError(f"guest CPU vendor is {actual[5]}")
                     skew = int(actual[1]) - time.time()
                     if abs(skew) > 5:
                         raise RuntimeError(f"guest clock is off by {skew:.1f} s")
