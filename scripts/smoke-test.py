@@ -4,7 +4,6 @@
 import json
 import pathlib
 import socket
-import struct
 import subprocess
 import sys
 import tempfile
@@ -28,7 +27,7 @@ def qmp(stream, command, **arguments):
             raise RuntimeError(reply["error"])
 
 
-def restore_and_plug(monitor, vm, hotplug, mailbox_vsock):
+def restore_and_plug(monitor, vm, hotplug):
     deadline = time.monotonic() + 15
     while not monitor.exists():
         if vm.poll() is not None or time.monotonic() >= deadline:
@@ -51,30 +50,6 @@ def restore_and_plug(monitor, vm, hotplug, mailbox_vsock):
             free = [cpu for cpu in qmp(stream, "query-hotpluggable-cpus") if "qom-path" not in cpu]
             for index, cpu in enumerate(sorted(free, key=lambda cpu: cpu["props"]["socket-id"])[:CPUS - 1]):
                 qmp(stream, "device_add", driver=cpu["type"], id=f"cpu{index + 1}", **cpu["props"])
-            if mailbox_vsock:
-                qmp(stream, "device_add", driver="vhost-user-vsock-pci",
-                    chardev="vsock0", id="mailbox-vsock")
-
-
-def read_exact(connection, size):
-    data = bytearray()
-    while len(data) < size:
-        chunk = connection.recv(size - len(data))
-        if not chunk:
-            raise RuntimeError("guest closed vsock mailbox")
-        data.extend(chunk)
-    return bytes(data)
-
-
-def send_file(connection, name, data):
-    encoded = name.encode()
-    connection.sendall(struct.pack("<HQ", len(encoded), len(data)) + encoded + data)
-
-
-def receive_file(connection):
-    name_size, data_size = struct.unpack("<HQ", read_exact(connection, 10))
-    name = read_exact(connection, name_size).decode()
-    return name, read_exact(connection, data_size)
 
 
 def main(bundle):
@@ -89,13 +64,12 @@ def main(bundle):
         share.mkdir()
         queue.mkdir()
         image = work / "store.img"
-        if "store_image_bytes" in machine:
-            subprocess.run(["mkfs.erofs", "--all-root", "-T0", image, share],
-                           check=True, stdout=subprocess.DEVNULL)
-            with image.open("r+b") as image_file:
-                image_file.truncate(machine["store_image_bytes"])
+        subprocess.run(["mkfs.erofs", "--all-root", "-T0", image, share],
+                       check=True, stdout=subprocess.DEVNULL)
+        with image.open("r+b") as image_file:
+            image_file.truncate(machine["store_image_bytes"])
         # Rename so the host never observes the result file before it is written.
-        run_script = (
+        (queue / "run.sh").write_text(
             "#!/bin/sh\n"
             "/bin/echo activity-vm-qemu-ready $(/bin/date +%s)"
             " $(/bin/grep MemTotal /proc/meminfo | /bin/tr -s ' ' | /bin/cut -d ' ' -f 2)"
@@ -106,29 +80,7 @@ def main(bundle):
             " > /obelisk-activity-vm-http/smoke-result.tmp\n"
             "/bin/mv /obelisk-activity-vm-http/smoke-result.tmp /obelisk-activity-vm-http/smoke-result\n"
         )
-        mailbox_vsock = machine.get("mailbox_vsock", False)
-        listener = None
-        backend = None
-        vhost = work / "vhost.sock"
-        vsock = work / "vsock"
-        if mailbox_vsock:
-            listener = socket.socket(socket.AF_UNIX)
-            listener.bind(f"{vsock}_1024")
-            listener.listen(1)
-            listener.settimeout(25)
-            vhost_binary = (bundle / "vhost-vsock-path").read_text().strip()
-            backend = subprocess.Popen([vhost_binary, "--guest-cid", "3", "--socket",
-                                        str(vhost), "--uds-path", str(vsock)],
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-            deadline = time.monotonic() + 10
-            while not vhost.exists():
-                if backend.poll() is not None or time.monotonic() >= deadline:
-                    raise RuntimeError(f"vsock backend did not start: {backend.stderr.read()!r}")
-                time.sleep(0.01)
-        else:
-            (queue / "run.sh").write_text(run_script)
-        args = [arg.format(pack=guest, share=share, queue=queue, image=image,
-                           ram=machine["ram"], vhost=vhost)
+        args = [arg.format(pack=guest, share=share, queue=queue, image=image, ram=machine["ram"])
                 for arg in machine["args"]]
         monitor = work / "qmp.sock"
         serial = work / "serial.log"
@@ -142,21 +94,13 @@ def main(bundle):
         )
         console.close()
         try:
-            restore_and_plug(monitor, vm, machine["hotplug"], mailbox_vsock)
+            restore_and_plug(monitor, vm, machine["hotplug"])
             now = time.time_ns()
             vm.stdin.write(f"{now // 10**9}.{now % 10**9:09} {CPUS}\n".encode())
             vm.stdin.flush()
             result = queue / "smoke-result"
-            if mailbox_vsock:
-                connection, _ = listener.accept()
-                connection.settimeout(20)
-                send_file(connection, "run.sh", run_script.encode())
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
-                if mailbox_vsock:
-                    name, data = receive_file(connection)
-                    if name == "smoke-result":
-                        result.write_bytes(data)
                 if result.exists():
                     actual = result.read_text().split()
                     if len(actual) != 7 or actual[0] != "activity-vm-qemu-ready":
@@ -182,11 +126,6 @@ def main(bundle):
         finally:
             vm.kill()
             vm.wait()
-            if backend is not None:
-                backend.kill()
-                backend.wait()
-            if listener is not None:
-                listener.close()
 
 
 if __name__ == "__main__":
