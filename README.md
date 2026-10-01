@@ -4,7 +4,7 @@ This repository builds the minimal Linux guest and migration snapshot for
 Obelisk's native QEMU activity VM backend. The default artifact uses software
 emulation (TCG), so building and running it does not require root or `/dev/kvm`.
 The guest boots once during the build, configures loopback and nftables, and is
-snapshotted before it mounts activity-specific 9p shares.
+snapshotted before it mounts the activity-specific EROFS closure and 9p mailbox.
 
 ## Build and test
 
@@ -13,9 +13,10 @@ nix build
 nix develop -c python3 scripts/smoke-test.py result
 ```
 
-The smoke test restores the snapshot, plugs 1 GiB of guest RAM, mounts the 9p
-mailbox, runs `/bin/echo` in the guest, and checks its output, the guest's RAM,
-and the size of its root filesystem. The Nix output contains `guest/`,
+The smoke test restores the snapshot with a sparse 16 GiB EROFS drive, plugs
+1 GiB of guest RAM, mounts the 9p mailbox, runs `/bin/echo` in the guest,
+and checks its output, the guest's RAM, and the size of its root filesystem.
+The Nix output contains `guest/`,
 `vm.state`, `qemu-path`, and `qemu-version.txt`. The path names the exact QEMU
 build used to create the snapshot. Obelisk cannot safely restore it with a
 different QEMU build.
@@ -87,6 +88,10 @@ The workflow builds KVM outside the Nix sandbox on an x86_64 runner with writabl
 The two snapshots are never interchangeable.
 For a local Obelisk debug build, set `OBELISK_UNSTABLE_ACTIVITY_VM=qemu-kvm` and
 `OBELISK_NATIVE_QEMU_BUNDLE=/tmp/obelisk-qemu-kvm`.
+This EROFS prototype also requires `mkfs.erofs` on the Obelisk server's `PATH`.
+The runner builds one closure image per mapping set per server process. The drive
+is always 16 GiB so its capacity matches the drive captured in the snapshot;
+the unused space is sparse.
 
 ## Inputs
 

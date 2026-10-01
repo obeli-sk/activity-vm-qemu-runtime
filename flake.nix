@@ -22,12 +22,13 @@
             -e MEMORY_HOTPLUG -e MEMORY_HOTPLUG_DEFAULT_ONLINE -e MEMORY_HOTREMOVE \
             -e MHP_MEMMAP_ON_MEMORY -e STRICT_DEVMEM -e VIRTIO_MEM \
             -e SMP --set-val NR_CPUS 64 \
-            -e ACPI_CONTAINER -e ACPI_HOTPLUG_CPU
+            -e ACPI_CONTAINER -e ACPI_HOTPLUG_CPU -e EROFS_FS
         '';
         postBuild = ''
           grep -qx CONFIG_VIRTIO_MEM=y .config
           grep -qx CONFIG_SMP=y .config
           grep -qx CONFIG_ACPI_HOTPLUG_CPU=y .config
+          grep -qx CONFIG_EROFS_FS=y .config
         '';
       });
       settime = pkgs.pkgsStatic.runCommandCC "settime" { } ''
@@ -36,7 +37,7 @@
       '';
       runtime = pkgs.runCommand "activity-vm-qemu-tcg-runtime" {
         src = ./.;
-        nativeBuildInputs = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 ];
+        nativeBuildInputs = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 pkgs.erofs-utils ];
       } ''
         bash "$src/build-bundle.sh" \
           ${pkgs.qemu}/bin/qemu-system-x86_64 \
@@ -59,7 +60,7 @@
       };
       checks.${system}.runtime = runtime;
       devShells.${system}.default = pkgs.mkShell {
-        packages = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 pkgs.jq pkgs.zstd ];
+        packages = [ pkgs.bash pkgs.libarchive pkgs.gzip pkgs.python3 pkgs.jq pkgs.zstd pkgs.erofs-utils ];
       };
     };
 }

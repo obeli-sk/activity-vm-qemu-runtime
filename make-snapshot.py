@@ -39,9 +39,13 @@ def main(bundle):
         queue = os.path.join(work, "queue")
         os.mkdir(share)
         os.mkdir(queue)
+        image = os.path.join(work, "store.img")
+        subprocess.run(["mkfs.erofs", "--all-root", "-T0", image, share],
+                       check=True, stdout=subprocess.DEVNULL)
+        os.truncate(image, machine["store_image_bytes"])
         serial = os.path.join(work, "serial.log")
         monitor = os.path.join(work, "qmp.sock")
-        args = [arg.format(pack=guest, share=share, queue=queue, ram=machine["ram"])
+        args = [arg.format(pack=guest, share=share, queue=queue, image=image, ram=machine["ram"])
                 for arg in machine["args"]]
         with open(serial, "wb") as console:
             vm = subprocess.Popen([qemu, *args, "-qmp", f"unix:{monitor},server,nowait"],

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Restore a built bundle, plug 1 GiB and one vCPU, and run one guest shell command over 9p."""
+"""Restore a built bundle, plug 1 GiB and one vCPU, and run one guest shell command."""
 
 import json
 import pathlib
@@ -63,6 +63,11 @@ def main(bundle):
         queue = work / "queue"
         share.mkdir()
         queue.mkdir()
+        image = work / "store.img"
+        subprocess.run(["mkfs.erofs", "--all-root", "-T0", image, share],
+                       check=True, stdout=subprocess.DEVNULL)
+        with image.open("r+b") as image_file:
+            image_file.truncate(machine["store_image_bytes"])
         # Rename so the host never observes the result file before it is written.
         (queue / "run.sh").write_text(
             "#!/bin/sh\n"
@@ -75,7 +80,7 @@ def main(bundle):
             " > /obelisk-activity-vm-http/smoke-result.tmp\n"
             "/bin/mv /obelisk-activity-vm-http/smoke-result.tmp /obelisk-activity-vm-http/smoke-result\n"
         )
-        args = [arg.format(pack=guest, share=share, queue=queue, ram=machine["ram"])
+        args = [arg.format(pack=guest, share=share, queue=queue, image=image, ram=machine["ram"])
                 for arg in machine["args"]]
         monitor = work / "qmp.sock"
         serial = work / "serial.log"
@@ -117,7 +122,7 @@ def main(bundle):
                 if vm.poll() is not None:
                     raise RuntimeError(f"QEMU exited {vm.returncode}: {vm.stderr.read()[-4000:]!r}")
                 time.sleep(0.05)
-            raise RuntimeError("guest did not complete smoke command")
+            raise RuntimeError(f"guest did not complete smoke command: {serial.read_text(errors='replace')[-4000:]}")
         finally:
             vm.kill()
             vm.wait()

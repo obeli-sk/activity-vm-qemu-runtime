@@ -2,6 +2,7 @@
   "ram": "256M",
   "cpu_hotplug": { "max": 16 },
   "hotplug": { "device": "vmem", "max_bytes": 17179869184, "block_bytes": 2097152 },
+  "store_image_bytes": 17179869184,
   "args": [
     "-nographic",
     "-cpu", "Haswell-v4,+rdrand,vendor=GenuineIntel",
@@ -15,8 +16,8 @@
     "-nic", "none",
     "-kernel", "{pack}/bzImage",
     "-initrd", "{pack}/initramfs.cpio.gz",
-    "-fsdev", "local,id=store0,path={share},security_model=none,readonly=on,multidevs=remap",
-    "-device", "virtio-9p-pci,fsdev=store0,mount_tag=store0,ioeventfd=off",
+    "-drive", "file={image},if=none,id=store0,format=raw,readonly=on",
+    "-device", "virtio-blk-pci,drive=store0",
     "-fsdev", "local,id=queue0,path={queue},security_model=none,multidevs=remap",
     "-device", "virtio-9p-pci,fsdev=queue0,mount_tag=queue0,ioeventfd=off",
     "-append", "console=ttyS0 rdinit=/init loglevel=4 mitigations=off rcupdate.rcu_expedited=1 noreplace-smp"
